@@ -65,6 +65,18 @@ func checkin(c *cli.Context) error {
 	return nil
 }
 
+func tufRefresh(c *cli.Context) error {
+	app, err := NewApp(c)
+	if err != nil {
+		return err
+	}
+	log.Print("Refreshing TUF metadata")
+	if err := app.RefreshTuf(); err != nil && !errors.Is(err, internal.NotModifiedError) {
+		return err
+	}
+	return nil
+}
+
 func daemon(c *cli.Context) error {
 	interval := time.Second * time.Duration(c.Int("interval"))
 	app, err := NewApp(c)
@@ -146,6 +158,13 @@ func main() {
 				Usage: "Check in with the server and update the local config",
 				Action: func(c *cli.Context) error {
 					return checkin(c)
+				},
+			},
+			{
+				Name:  "tuf-refresh",
+				Usage: "Refresh TUF metadata",
+				Action: func(c *cli.Context) error {
+					return tufRefresh(c)
 				},
 			},
 			{
