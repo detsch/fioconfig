@@ -65,6 +65,18 @@ func checkin(c *cli.Context) error {
 	return nil
 }
 
+func tufAgent(c *cli.Context) error {
+	app, err := NewApp(c)
+	if err != nil {
+		return err
+	}
+	log.Print("Starting TUF client agent")
+	if err := app.StartTufAgent(); err != nil && !errors.Is(err, internal.NotModifiedError) {
+		return err
+	}
+	return nil
+}
+
 func daemon(c *cli.Context) error {
 	interval := time.Second * time.Duration(c.Int("interval"))
 	app, err := NewApp(c)
@@ -146,6 +158,13 @@ func main() {
 				Usage: "Check in with the server and update the local config",
 				Action: func(c *cli.Context) error {
 					return checkin(c)
+				},
+			},
+			{
+				Name:  "tuf-agent",
+				Usage: "Start TUF client agent",
+				Action: func(c *cli.Context) error {
+					return tufAgent(c)
 				},
 			},
 			{
