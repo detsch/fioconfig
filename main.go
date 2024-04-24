@@ -71,7 +71,9 @@ func tufRefresh(c *cli.Context) error {
 		return err
 	}
 	log.Print("Refreshing TUF metadata")
-	if err := app.RefreshTuf(); err != nil && !errors.Is(err, internal.NotModifiedError) {
+	// localRepoPath := "file:///var/rootdirs/home/fio/local_tuf/"
+	localRepoPath := ""
+	if err := app.RefreshTuf(localRepoPath); err != nil && !errors.Is(err, internal.NotModifiedError) {
 		return err
 	}
 	return nil
