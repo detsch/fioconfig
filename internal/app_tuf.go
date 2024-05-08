@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/detsch/go-tuf/v2/metadata"
 	"github.com/detsch/go-tuf/v2/metadata/config"
 	"github.com/detsch/go-tuf/v2/metadata/updater"
@@ -18,7 +20,9 @@ import (
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
 )
-
+var (
+	globalApp *App
+)
 
 type FioFetcher struct {
 	client *http.Client
@@ -110,6 +114,7 @@ func (d *FioFetcher) DownloadFile(urlPath string, maxLength int64, timeout time.
 }
 
 func (a *App) RefreshTuf(localRepoPath string) error {
+	globalApp = a
 	client, crypto := createClient(a.sota)
 	// defer crypto.Close()
 	a.callInitFunctions(client, crypto)
@@ -178,7 +183,7 @@ func (a *App) refreshTuf(client *http.Client, localRepoPath string) error {
 		log.Println("failed to create Updater instance: %w", err)
 		return err
 	}
-	
+
 	// try to build the top-level metadata
 	err = up.Refresh()
 	if err != nil {
@@ -192,7 +197,8 @@ func (a *App) refreshTuf(client *http.Client, localRepoPath string) error {
 
 	log.Println("DONE ONLINE")
 
-	startDbus()
+	// startDbus()
+	startHttpServer()
 	return nil
 }
 
@@ -248,7 +254,7 @@ func (f foo) ReadLocalPath(localTufRepo string) (int, *dbus.Error) {
 		log.Println("failed to create Updater instance: %w", err)
 		return -1, nil
 	}
-	
+
 	// try to build the top-level metadata
 	err = up.Refresh()
 	if err != nil {
@@ -298,4 +304,67 @@ func startDbus() {
 	}
 	fmt.Println("Listening on io.foundries.tuf / /io/foundries/tuf ...")
 	select {}
+}
+
+func GetTargetsHttp(c *gin.Context) {
+	ret := []string{}
+	targets := fioUpdater.GetTopLevelTargets()
+	for name, _ := range targets {
+		t, _ := targets[name].MarshalJSON()
+		ret = append(ret, string(t))
+	}
+
+	c.IndentedJSON(http.StatusOK, targets)
+}
+
+
+type tufError struct {
+	s string
+}
+
+func (f tufError) Error() string {
+	return "TUF error"
+}
+
+
+func UpdateTargets(c *gin.Context) {
+
+	log.Println("UpdateTargets BEGIN")
+	globalApp.refreshTuf(fioClient, "")
+	c.Done()
+	log.Println("UpdateTargets END")
+}
+
+func ReadLocalPathHttp(c *gin.Context) {
+	localTufRepo := c.Param("localTufRepo")
+	log.Println("ReadLocalPathHttp BEGIN " + localTufRepo)
+	cfg, err := getTufCfg(localTufRepo, fioClient)
+	if err != nil {
+		c.AbortWithError(http.StatusBadRequest, tufError{ fmt.Sprintf("failed to create Config instance: %w", err)})
+	}
+
+	// create a new Updater instance
+	up, err := updater.New(cfg)
+	if err != nil {
+		c.AbortWithError(http.StatusBadRequest, tufError{ fmt.Sprintf("failed to create Updater instance: %w", err)})
+	}
+
+	// try to build the top-level metadata
+	err = up.Refresh()
+	if err != nil {
+		c.AbortWithError(http.StatusBadRequest, tufError{ fmt.Sprintf("failed to refresh trusted metadata: %w", err)})
+	}
+	c.Done()
+	log.Println("ReadLocalPathHttp END " + localTufRepo)
+}
+
+func startHttpServer() {
+	router := gin.Default()
+	router.GET("/targets", GetTargetsHttp)
+	// Just test routes for now. Those would probably be POST methods
+	router.GET("/targets/update", UpdateTargets)
+	router.GET("/targets/update_local/:localTufRepo", ReadLocalPathHttp)
+	fmt.Println("Starting test http server at port 9080")
+	router.Run("localhost:9080")
+	fmt.Println("Exit from port 9080")
 }
